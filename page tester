@@ -1,0 +1,27 @@
+import pyautogui
+import time
+
+# Give yourself 5 seconds to switch to the GitHub tab
+time.sleep(5)
+
+# Start navigating: Assuming the "Authorize" buttons are focusable via Tab
+for i in range(20):  # adjust the range to how many orgs you have
+    pyautogui.press('tab')        # Move to the Authorize button
+    pyautogui.press('enter')      # Open the SSO popup
+    time.sleep(2)                 # Wait for the popup to open (adjust if needed)
+
+    # Open new tab via Ctrl+Enter or simulate the window switch
+    pyautogui.hotkey('ctrl', 'tab')  # Go to the newly opened tab
+    time.sleep(2)
+
+    # Press Tab 4 times to get to the green Continue button
+    for _ in range(4):
+        pyautogui.press('tab')
+        time.sleep(0.2)
+    pyautogui.press('enter')  # Click Continue
+    time.sleep(1)
+
+    pyautogui.hotkey('ctrl', 'w')  # Close the current tab
+    pyautogui.hotkey('ctrl', 'shift', 'tab')  # Go back to the original tab
+
+    time.sleep(1.5)
