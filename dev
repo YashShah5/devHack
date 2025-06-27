@@ -1,0 +1,21 @@
+// Click all "Authorize" buttons currently visible
+document.querySelectorAll('button').forEach(btn => {
+  if (btn.textContent.trim() === 'Authorize') {
+    btn.click();
+  }
+});
+
+
+
+Step 2: Wait a few seconds and then click the "Continue" button (if it exists)
+
+If GitHub shows a “Continue” or similar button after authorizing, use this:
+
+
+
+setTimeout(() => {
+  const continueBtn = [...document.querySelectorAll('button')].find(btn => 
+    btn.textContent.trim().toLowerCase().includes('continue')
+  );
+  if (continueBtn) continueBtn.click();
+}, 3000); // Wait 3 seconds before clicking
