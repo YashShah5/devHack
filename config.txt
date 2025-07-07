@@ -1,46 +1,37 @@
-graph TD
+flowchart TD
 
-Start["Start: GitHub Org - on-prem"] --> A{"Is complexity_score = 'Complex'?"}
+%% Start
+A["Start: GitHub Org - on-prem"] --> B{"Is complexity_score = 'Complex'?"}
 
-A -- No --> Simple["✅ Already Simple → Self-Help Portal"]
-A -- Yes --> B{"Repo Size < 20GB?"}
-B -- No --> Complex1["❌ Complex: Manual Migration"]
-B -- Yes --> C{"Branch Count < 50?"}
-C -- No --> Complex2
-C -- Yes --> D{"Commit Count < 400?"}
-D -- No --> Complex3
-D -- Yes --> E{"Webhooks = false or missing?"}
-E -- No --> Complex4
-E -- Yes --> F{"Actions = false?"}
-F -- No --> Complex5
-F -- Yes --> G{"Runners = false?"}
-G -- No --> Complex6
-G -- Yes --> H{"Branch Protections = false?"}
-H -- No --> Complex7
-H -- Yes --> I{"Issues = false?"}
-I -- No --> Complex8
-I -- Yes --> J{"Pages = static or false?"}
-J -- No --> Complex9
-J -- Yes --> K{"Releases = false?"}
-K -- No --> Complex10
-K -- Yes --> L{"Wiki = false?"}
-L -- No --> Complex11
-L -- Yes --> M{"Projects = false?"}
-M -- No --> Complex12
-M -- Yes --> Final["✅ Reclassify as Medium → Self-Help Portal"]
+%% Bypass path
+B -- No --> Z1["✅ Already Simple → Self-Help Portal"]
+B -- Yes --> C{"Repo Size < 20GB?"}
+C -- No --> X1["❌ Complex: Manual Migration"]
+C -- Yes --> D{"Branch Count < 50?"}
+D -- No --> X1
+D -- Yes --> E{"Commit Count < 400?"}
+E -- No --> X1
+E -- Yes --> F{"Webhooks = false or missing?"}
+F -- No --> X1
+F -- Yes --> G{"Actions = false?"}
+G -- No --> X1
+G -- Yes --> H{"Runners = false?"}
+H -- No --> X1
+H -- Yes --> I{"Branch Protections = false?"}
+I -- No --> X1
+I -- Yes --> J{"Issues = false?"}
+J -- No --> X1
+J -- Yes --> K{"Pages = static or false?"}
+K -- No --> X1
+K -- Yes --> L{"Releases = false?"}
+L -- No --> X1
+L -- Yes --> M{"Wiki = false?"}
+M -- No --> X1
+M -- Yes --> N{"Projects = false?"}
+N -- No --> X1
+N -- Yes --> Y["✅ Reclassify as Medium → Eligible for Self-Help Portal"]
 
-%% End states
-Complex1 --> End["End"]
-Complex2 --> End
-Complex3 --> End
-Complex4 --> End
-Complex5 --> End
-Complex6 --> End
-Complex7 --> End
-Complex8 --> End
-Complex9 --> End
-Complex10 --> End
-Complex11 --> End
-Complex12 --> End
-Final --> End
-Simple --> End
+%% All exits → End
+Z1 --> END["End"]
+X1 --> END
+Y --> END
