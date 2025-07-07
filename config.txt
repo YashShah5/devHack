@@ -1,41 +1,38 @@
-flowchart TD
+graph TD
 
-    %% START + INITIAL CLASSIFICATION
-    A([Start: GitHub Org (on-prem)]) --> B{Is complexity_score = "Complex"?}
+A[Start: GitHub Org (on-prem)] --> B{Is complexity_score = "Complex"?}
 
-    B -- No --> S1[✅ Already Simple → Self-Help Portal]
-    B -- Yes --> C[Run Medium Complexity Filter Evaluation]
+B -- No --> C[✅ Already Simple → Self-Help Portal]
+B -- Yes --> D[Run Medium Complexity Filters]
 
-    %% FILTER EVALUATION CHAIN
-    C --> F1{Repo Size < 20GB?}
-    F1 -- No --> X[❌ Blocked: Complex → Manual Migration]
-    F1 -- Yes --> F2{Branch Count < 50?}
-    F2 -- No --> X
-    F2 -- Yes --> F3{Commit Count < 400?}
-    F3 -- No --> X
-    F3 -- Yes --> F4{Webhooks = false or not present?}
-    F4 -- No --> X
-    F4 -- Yes --> F5{Actions = false?}
-    F5 -- No --> X
-    F5 -- Yes --> F6{Runners = false?}
-    F6 -- No --> X
-    F6 -- Yes --> F7{Branch Protections = false?}
-    F7 -- No --> X
-    F7 -- Yes --> F8{Issues = false?}
-    F8 -- No --> X
-    F8 -- Yes --> F9{Pages = static or false?}
-    F9 -- No --> X
-    F9 -- Yes --> F10{Releases = false?}
-    F10 -- No --> X
-    F10 -- Yes --> F11{Wiki = false?}
-    F11 -- No --> X
-    F11 -- Yes --> F12{Projects = false?}
-    F12 -- No --> X
-    F12 -- Yes --> F13{Pull Requests = false?}
-    F13 -- No --> X
-    F13 -- Yes --> R1[✅ Reclassify to Medium → Eligible for Self-Help Portal]
+D --> E1{Repo Size < 20GB?}
+E1 -- No --> Z1[❌ Complex: Manual Migration]
+E1 -- Yes --> E2{Branch Count < 50?}
+E2 -- No --> Z1
+E2 -- Yes --> E3{Commit Count < 400?}
+E3 -- No --> Z1
+E3 -- Yes --> E4{Webhooks = false or missing?}
+E4 -- No --> Z1
+E4 -- Yes --> E5{Actions = false?}
+E5 -- No --> Z1
+E5 -- Yes --> E6{Runners = false?}
+E6 -- No --> Z1
+E6 -- Yes --> E7{Branch Protections = false?}
+E7 -- No --> Z1
+E7 -- Yes --> E8{Issues = false?}
+E8 -- No --> Z1
+E8 -- Yes --> E9{Pages = static or false?}
+E9 -- No --> Z1
+E9 -- Yes --> E10{Releases = false?}
+E10 -- No --> Z1
+E10 -- Yes --> E11{Wiki = false?}
+E11 -- No --> Z1
+E11 -- Yes --> E12{Projects = false?}
+E12 -- No --> Z1
+E12 -- Yes --> E13{Pull Requests = false?}
+E13 -- No --> Z1
+E13 -- Yes --> R1[✅ Reclassify as Medium → Eligible for Self-Help Portal]
 
-    %% END STATES
-    S1 --> E([End])
-    R1 --> E
-    X --> E
+Z1 --> END[End]
+R1 --> END
+C --> END
