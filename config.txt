@@ -1,38 +1,46 @@
 graph TD
 
-A[Start: GitHub Org (on-prem)] --> B{Is complexity_score = "Complex"?}
+Start["Start: GitHub Org - on-prem"] --> A{"Is complexity_score = 'Complex'?"}
 
-B -- No --> C[✅ Already Simple → Self-Help Portal]
-B -- Yes --> D[Run Medium Complexity Filters]
+A -- No --> Simple["✅ Already Simple → Self-Help Portal"]
+A -- Yes --> B{"Repo Size < 20GB?"}
+B -- No --> Complex1["❌ Complex: Manual Migration"]
+B -- Yes --> C{"Branch Count < 50?"}
+C -- No --> Complex2
+C -- Yes --> D{"Commit Count < 400?"}
+D -- No --> Complex3
+D -- Yes --> E{"Webhooks = false or missing?"}
+E -- No --> Complex4
+E -- Yes --> F{"Actions = false?"}
+F -- No --> Complex5
+F -- Yes --> G{"Runners = false?"}
+G -- No --> Complex6
+G -- Yes --> H{"Branch Protections = false?"}
+H -- No --> Complex7
+H -- Yes --> I{"Issues = false?"}
+I -- No --> Complex8
+I -- Yes --> J{"Pages = static or false?"}
+J -- No --> Complex9
+J -- Yes --> K{"Releases = false?"}
+K -- No --> Complex10
+K -- Yes --> L{"Wiki = false?"}
+L -- No --> Complex11
+L -- Yes --> M{"Projects = false?"}
+M -- No --> Complex12
+M -- Yes --> Final["✅ Reclassify as Medium → Self-Help Portal"]
 
-D --> E1{Repo Size < 20GB?}
-E1 -- No --> Z1[❌ Complex: Manual Migration]
-E1 -- Yes --> E2{Branch Count < 50?}
-E2 -- No --> Z1
-E2 -- Yes --> E3{Commit Count < 400?}
-E3 -- No --> Z1
-E3 -- Yes --> E4{Webhooks = false or missing?}
-E4 -- No --> Z1
-E4 -- Yes --> E5{Actions = false?}
-E5 -- No --> Z1
-E5 -- Yes --> E6{Runners = false?}
-E6 -- No --> Z1
-E6 -- Yes --> E7{Branch Protections = false?}
-E7 -- No --> Z1
-E7 -- Yes --> E8{Issues = false?}
-E8 -- No --> Z1
-E8 -- Yes --> E9{Pages = static or false?}
-E9 -- No --> Z1
-E9 -- Yes --> E10{Releases = false?}
-E10 -- No --> Z1
-E10 -- Yes --> E11{Wiki = false?}
-E11 -- No --> Z1
-E11 -- Yes --> E12{Projects = false?}
-E12 -- No --> Z1
-E12 -- Yes --> E13{Pull Requests = false?}
-E13 -- No --> Z1
-E13 -- Yes --> R1[✅ Reclassify as Medium → Eligible for Self-Help Portal]
-
-Z1 --> END[End]
-R1 --> END
-C --> END
+%% End states
+Complex1 --> End["End"]
+Complex2 --> End
+Complex3 --> End
+Complex4 --> End
+Complex5 --> End
+Complex6 --> End
+Complex7 --> End
+Complex8 --> End
+Complex9 --> End
+Complex10 --> End
+Complex11 --> End
+Complex12 --> End
+Final --> End
+Simple --> End
