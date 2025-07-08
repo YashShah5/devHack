@@ -1,102 +1,107 @@
 import os
 import csv
 import subprocess
-import shutil
 import logging
-from urllib.parse import urlparse
 from dotenv import load_dotenv
+import shutil
 
-# Load secrets from .env
+# Load environment variables
 load_dotenv()
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
-# Logging setup
+# Setup logging
+LOG_FILE = "large_file_scan.log"
 logging.basicConfig(
-    filename='file_size_checker.log',
+    filename=LOG_FILE,
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
+def log_and_print(message):
+    print(message)
+    logging.info(message)
+
+# Constants
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 INPUT_CSV = "urlTestGreater.csv"
 OUTPUT_CSV = "large_files_report.csv"
-TEMP_CLONE_DIR = "temp_clones"
+CLONE_DIR = "cloned_repos"
+SIZE_THRESHOLD = 419430400  # 400MB
 
-os.makedirs(TEMP_CLONE_DIR, exist_ok=True)
+# Ensure the clone directory exists
+os.makedirs(CLONE_DIR, exist_ok=True)
 
-def extract_repo_name(url):
-    path_parts = urlparse(url).path.strip("/").split("/")
-    return path_parts[-1] if len(path_parts) >= 2 else None
+# Prepare output CSV
+output_rows = [["Repo URL", "Clone Status", "Scan Status", "Large Files (path, size)", "Error"]]
 
-def clone_repo(repo_url, clone_dir):
+# Read repo URLs
+with open(INPUT_CSV, newline='') as infile:
+    reader = csv.reader(infile)
+    urls = [row[0].strip() for row in reader if row]
+
+for url in urls:
+    repo_name = url.split("/")[-1].replace(".git", "")
+    clone_path = os.path.join(CLONE_DIR, repo_name)
+    if os.path.exists(clone_path):
+        shutil.rmtree(clone_path)
+
+    authed_url = url.replace("https://", f"https://{GITHUB_TOKEN}@")
+
+    clone_status = "Failed"
+    scan_status = "Not Started"
+    large_files = []
+    error_message = ""
+
     try:
-        subprocess.run(
-            ['git', 'clone', '--mirror', repo_url],
-            cwd=clone_dir,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True
-        )
-        logging.info(f"CLONE SUCCESS: {repo_url}")
-        return True
+        subprocess.run(["git", "clone", "--mirror", authed_url, clone_path],
+                       check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        log_and_print(f"CLONE SUCCESS: {url}")
+        clone_status = "Success"
+
+        try:
+            commits = subprocess.check_output(["git", "rev-list", "--all"], cwd=clone_path).decode().splitlines()
+            seen_blobs = set()
+
+            for commit in commits:
+                tree_output = subprocess.check_output(["git", "ls-tree", "-r", commit], cwd=clone_path).decode().splitlines()
+                for line in tree_output:
+                    parts = line.split()
+                    if len(parts) < 4:
+                        continue
+                    blob_hash = parts[2]
+                    file_path = parts[3]
+
+                    if blob_hash in seen_blobs:
+                        continue
+                    seen_blobs.add(blob_hash)
+
+                    try:
+                        size = int(subprocess.check_output(["git", "cat-file", "-s", blob_hash], cwd=clone_path).decode().strip())
+                        if size > SIZE_THRESHOLD:
+                            large_files.append(f"{file_path} ({size} bytes)")
+                    except Exception:
+                        continue
+
+            scan_status = "Completed"
+            if not large_files:
+                large_files = ["None"]
+
+            log_and_print(f"SCAN COMPLETE: {url} - Large files: {', '.join(large_files)}")
+
+        except subprocess.CalledProcessError as e:
+            scan_status = "Failed"
+            error_message = e.stderr.decode()
+            log_and_print(f"SCAN FAILED: {url} — {error_message}")
+
     except subprocess.CalledProcessError as e:
-        logging.error(f"CLONE FAILED: {repo_url}, Error: {e}")
-        return False
+        error_message = e.stderr.decode()
+        log_and_print(f"CLONE FAILED: {url} — {error_message}")
 
-def run_git_sizer(repo_path):
-    try:
-        result = subprocess.run(
-            ['git-sizer', '--verbose'],
-            cwd=repo_path,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True
-        )
-        return result.stdout.decode()
-    except subprocess.CalledProcessError as e:
-        logging.error(f"git-sizer failed in {repo_path}: {e}")
-        return None
+    output_rows.append([url, clone_status, scan_status, "; ".join(large_files), error_message])
 
-def main():
-    with open(INPUT_CSV, newline='') as infile, open(OUTPUT_CSV, 'w', newline='') as outfile:
-        reader = csv.reader(infile)
-        writer = csv.writer(outfile)
-        writer.writerow(["Repo URL", "Clone Status", "Large File Found", "Notes"])
+    if os.path.exists(clone_path):
+        shutil.rmtree(clone_path)
 
-        for row in reader:
-            if not row:
-                continue
-            repo_url = row[0].strip()
-            repo_name = extract_repo_name(repo_url)
-            if not repo_name:
-                logging.warning(f"Invalid repo URL: {repo_url}")
-                writer.writerow([repo_url, "Invalid URL", "N/A", "Skipped"])
-                continue
-
-            clone_path = os.path.join(TEMP_CLONE_DIR, repo_name)
-
-            if clone_repo(repo_url, TEMP_CLONE_DIR):
-                sizer_output = run_git_sizer(clone_path)
-                if sizer_output:
-                    for line in sizer_output.splitlines():
-                        if "blob" in line and "bytes" in line:
-                            try:
-                                size_bytes = int(line.strip().split()[-2].replace(",", ""))
-                                if size_bytes > 400 * 1024 * 1024:
-                                    writer.writerow([repo_url, "Success", "Yes", line.strip()])
-                                    break
-                            except Exception:
-                                continue
-                    else:
-                        writer.writerow([repo_url, "Success", "No", "No large file detected"])
-                else:
-                    writer.writerow([repo_url, "Success", "Unknown", "git-sizer failed"])
-            else:
-                writer.writerow([repo_url, "Clone Failed", "N/A", "Git clone error"])
-
-            # Delete repo after check
-            if os.path.exists(clone_path):
-                shutil.rmtree(clone_path, ignore_errors=True)
-                logging.info(f"Deleted: {clone_path}")
-
-if __name__ == "__main__":
-    main()
+# Write results
+with open(OUTPUT_CSV, "w", newline='') as outfile:
+    writer = csv.writer(outfile)
+    writer.writerows(output_rows)
