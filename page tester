@@ -31,7 +31,7 @@ SIZE_THRESHOLD = 419430400  # 400MB
 os.makedirs(CLONE_DIR, exist_ok=True)
 
 # Prepare output CSV
-output_rows = [["Repo URL", "Clone Status", "Scan Status", "Large Files (path, size)", "Error"]]
+output_rows = [["Repo URL", "Clone Status", "Scan Status", "Large Files (branch → path, size)", "Error"]]
 
 # Read repo URLs
 with open(INPUT_CSV, newline='') as infile:
@@ -77,7 +77,9 @@ for url in urls:
                     try:
                         size = int(subprocess.check_output(["git", "cat-file", "-s", blob_hash], cwd=clone_path).decode().strip())
                         if size > SIZE_THRESHOLD:
-                            large_files.append(f"{file_path} ({size} bytes)")
+                            branches = subprocess.check_output(["git", "branch", "--contains", commit], cwd=clone_path).decode().splitlines()
+                            branch = branches[0].strip().replace("* ", "") if branches else "unknown"
+                            large_files.append(f"{branch} → {file_path} ({size} bytes)")
                     except Exception:
                         continue
 
