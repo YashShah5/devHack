@@ -1,37 +1,160 @@
-flowchart TD
+import os
+import csv
+import logging
+import traceback
+from typing import Dict, Set, Optional, List
+from github import (
+    Github,
+    Auth,
+    Repository,
+    BadCredentialsException,
+    RateLimitExceededException,
+    UnknownObjectException,
+    IssueComment
+)
+from requests.exceptions import RequestException
 
-%% Start
-A["Start: GitHub Org - on-prem"] --> B{"Is complexity_score = 'Complex'?"}
+# --- Logging Config ---
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
-%% Bypass path
-B -- No --> Z1["✅ Already Simple → Self-Help Portal"]
-B -- Yes --> C{"Repo Size < 20GB?"}
-C -- No --> X1["❌ Complex: Manual Migration"]
-C -- Yes --> D{"Branch Count < 50?"}
-D -- No --> X1
-D -- Yes --> E{"Commit Count < 400?"}
-E -- No --> X1
-E -- Yes --> F{"Webhooks = false or missing?"}
-F -- No --> X1
-F -- Yes --> G{"Actions = false?"}
-G -- No --> X1
-G -- Yes --> H{"Runners = false?"}
-H -- No --> X1
-H -- Yes --> I{"Branch Protections = false?"}
-I -- No --> X1
-I -- Yes --> J{"Issues = false?"}
-J -- No --> X1
-J -- Yes --> K{"Pages = static or false?"}
-K -- No --> X1
-K -- Yes --> L{"Releases = false?"}
-L -- No --> X1
-L -- Yes --> M{"Wiki = false?"}
-M -- No --> X1
-M -- Yes --> N{"Projects = false?"}
-N -- No --> X1
-N -- Yes --> Y["✅ Reclassify as Medium → Eligible for Self-Help Portal"]
+# --- Env Config ---
+SOURCE_BASE_URL: Optional[str] = os.getenv("SOURCE_BASE_URL")
+SOURCE_TOKEN: Optional[str] = os.getenv("SOURCE_TOKEN")
+SOURCE_ORG: Optional[str] = os.getenv("SOURCE_ORG")
 
-%% All exits → End
-Z1 --> END["End"]
-X1 --> END
-Y --> END
+DESTINATION_TOKEN: Optional[str] = os.getenv("DESTINATION_TOKEN")
+DESTINATION_ORG: Optional[str] = os.getenv("DESTINATION_ORG")
+
+OUTPUT_CSV: str = os.getenv("OUTPUT_CSV", "missing_issues_report.csv")
+
+
+# --- GitHub Auth ---
+def authenticate_github(token: str, base_url: Optional[str] = None) -> Github:
+    if base_url:
+        return Github(base_url=base_url, auth=Auth.Token(token))
+    return Github(auth=Auth.Token(token))
+
+
+def validate_auth(token: str, org_name: str, base_url: Optional[str] = None, label: str = "") -> Github:
+    if not token or len(token.strip()) < 10:
+        raise ValueError(f"GitHub token is missing or malformed for {label}")
+
+    logging.info(f"Authenticating with {label} GitHub for org: {org_name}")
+    try:
+        gh: Github = authenticate_github(token.strip(), base_url)
+        gh.get_organization(org_name)
+        logging.info(f"Successfully authenticated with {label} GitHub.")
+        return gh
+    except BadCredentialsException:
+        raise ValueError(f"Invalid GitHub credentials for {label}")
+    except Exception as e:
+        raise ValueError(f"Error authenticating with {label}: {e}")
+
+
+# --- Fetch Issues ---
+def fetch_issue_numbers(repo: Repository.Repository) -> Set[int]:
+    issue_nums: Set[int] = set()
+    try:
+        issues = repo.get_issues(state='all')
+        for issue in issues:
+            if not issue.pull_request:
+                issue_nums.add(issue.number)
+        logging.info(f"{repo.full_name}: {len(issue_nums)} issue(s) found")
+    except Exception as e:
+        logging.warning(f"Failed to fetch issues for {repo.full_name}: {e}")
+    return issue_nums
+
+
+# --- Fetch Comments ---
+def get_issue_comments(repo: Repository.Repository, issue_number: int) -> List[Dict[str, str]]:
+    try:
+        issue = repo.get_issue(number=issue_number)
+        comments = issue.get_comments()
+        return [{"user": c.user.login if c.user else "ghost", "body": c.body.strip() if c.body else ""} for c in comments]
+    except Exception as e:
+        logging.warning(f"Error fetching comments for issue #{issue_number} in {repo.full_name}: {e}")
+        return []
+
+
+# --- Compare ---
+def compare_issues(src: Set[int], dst: Set[int]) -> Dict[str, List[int]]:
+    return {
+        "missing_in_dest": sorted(list(src - dst)),
+        "missing_in_source": sorted(list(dst - src))
+    }
+
+
+def compare_comments(src_comments: List[Dict[str, str]], dst_comments: List[Dict[str, str]]) -> str:
+    if len(src_comments) != len(dst_comments):
+        return "comment_count_mismatch"
+
+    # Normalize and compare each comment
+    for s, d in zip(src_comments, dst_comments):
+        if s["user"] != d["user"] or s["body"] != d["body"]:
+            return "comment_body_mismatch"
+
+    return "match"
+
+
+# --- CSV Writer ---
+def write_csv(missing_data: List[Dict[str, str]]) -> None:
+    logging.info(f"Writing report to: {OUTPUT_CSV}")
+    with open(OUTPUT_CSV, "w", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(["Repository", "Direction", "Issue Number", "Notes"])
+        for row in missing_data:
+            writer.writerow([row["repo"], row["direction"], row["issue"], row.get("notes", "")])
+    logging.info("CSV write complete.")
+
+
+# --- Main Logic ---
+def verify_org_issues() -> None:
+    try:
+        logging.info("Starting issue + comment validation...")
+
+        # Auth
+        source_gh = validate_auth(SOURCE_TOKEN, SOURCE_ORG, SOURCE_BASE_URL, label="source")
+        dest_gh = validate_auth(DESTINATION_TOKEN, DESTINATION_ORG, label="destination")
+
+        source_org = source_gh.get_organization(SOURCE_ORG)
+        dest_org = dest_gh.get_organization(DESTINATION_ORG)
+
+        source_repos = {repo.name: repo for repo in source_org.get_repos()}
+        dest_repos = {repo.name: repo for repo in dest_org.get_repos()}
+
+        report_data: List[Dict[str, str]] = []
+
+        for repo_name, src_repo in source_repos.items():
+            if repo_name not in dest_repos:
+                logging.warning(f"Repo '{repo_name}' not found in destination. Skipping.")
+                continue
+
+            dst_repo = dest_repos[repo_name]
+
+            src_issues = fetch_issue_numbers(src_repo)
+            dst_issues = fetch_issue_numbers(dst_repo)
+
+            diffs = compare_issues(src_issues, dst_issues)
+
+            for issue_num in diffs["missing_in_dest"]:
+                report_data.append({
+                    "repo": repo_name,
+                    "direction": "missing_in_destination",
+                    "issue": issue_num
+                })
+
+            for issue_num in diffs["missing_in_source"]:
+                report_data.append({
+                    "repo": repo_name,
+                    "direction": "missing_in_source",
+                    "issue": issue_num
+                })
+
+            # ✅ Compare comments for shared issues
+            shared = src_issues & dst_issues
+            for issue_num in shared:
+                src_comments = get_issue_comments(src_repo, issue_num)
+                dst_comments = get_issue_comments(dst_repo, issue_num)
