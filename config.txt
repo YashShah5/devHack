@@ -158,3 +158,26 @@ def verify_org_issues() -> None:
             for issue_num in shared:
                 src_comments = get_issue_comments(src_repo, issue_num)
                 dst_comments = get_issue_comments(dst_repo, issue_num)
+                result = compare_comments(src_comments, dst_comments)
+                if result != "match":
+                    report_data.append({
+                        "repo": repo_name,
+                        "direction": result,
+                        "issue": issue_num,
+                        "notes": f"{len(src_comments)} vs {len(dst_comments)} comments"
+                    })
+                    logging.warning(f"Comment mismatch on {repo_name}#{issue_num}: {result}")
+
+        write_csv(report_data)
+
+    except (RateLimitExceededException, RequestException) as e:
+        logging.error(f"GitHub API error: {e}")
+    except ValueError as e:
+        logging.error(e)
+    except Exception as e:
+        logging.error(f"Unexpected error: {e}")
+        traceback.print_exc()
+
+
+if __name__ == "__main__":
+    verify_org_issues()
