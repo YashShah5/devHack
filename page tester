@@ -31,7 +31,7 @@ SIZE_THRESHOLD = 419430400  # 400MB
 os.makedirs(CLONE_DIR, exist_ok=True)
 
 # Prepare output CSV
-output_rows = [["Repo URL", "Clone Status", "Scan Status", "Large Files (path, size)", "Error"]]
+output_rows = [["Repo URL", "Clone Status", "Scan Status", "Large Files (path, size, SHA, URL)", "Error"]]
 
 # Read repo URLs
 with open(INPUT_CSV, newline='') as infile:
@@ -40,6 +40,7 @@ with open(INPUT_CSV, newline='') as infile:
 
 for url in urls:
     repo_name = url.split("/")[-1].replace(".git", "")
+    org_name = url.split("/")[-2]
     clone_path = os.path.join(CLONE_DIR, repo_name)
     if os.path.exists(clone_path):
         shutil.rmtree(clone_path)
@@ -64,28 +65,22 @@ for url in urls:
             for commit in commits:
                 tree_output = subprocess.check_output(["git", "ls-tree", "-r", commit], cwd=clone_path).decode().splitlines()
                 for line in tree_output:
-                    parts = line.strip().split(None, 4)
+                    parts = line.split()
                     if len(parts) < 4:
                         continue
-                    blob_type = parts[1]
                     blob_hash = parts[2]
-                    file_path = parts[3] if len(parts) > 3 else "unknown_path"
+                    file_path = parts[3]
 
-                    if blob_type != "blob":
-                        continue
                     if blob_hash in seen_blobs:
                         continue
                     seen_blobs.add(blob_hash)
 
                     try:
-                        size = int(subprocess.check_output(
-                            ["git", "cat-file", "-s", blob_hash],
-                            cwd=clone_path
-                        ).decode().strip())
+                        size = int(subprocess.check_output(["git", "cat-file", "-s", blob_hash], cwd=clone_path).decode().strip())
                         if size > SIZE_THRESHOLD:
-                            large_files.append(f"{file_path} ({size} bytes)")
-                    except subprocess.CalledProcessError as e:
-                        log_and_print(f"Failed to get size for blob {blob_hash} in {repo_name}: {e}")
+                            blob_url = f"https://github-test.qualcomm.com/{org_name}/{repo_name}/blob/{commit}/{file_path}"
+                            large_files.append(f"{file_path} ({size} bytes, SHA: {blob_hash}, URL: {blob_url})")
+                    except Exception:
                         continue
 
             scan_status = "Completed"
