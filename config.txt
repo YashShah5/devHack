@@ -225,3 +225,39 @@ def verify_org_issues() -> None:
 
 if __name__ == "__main__":
     verify_org_issues()
+
+
+
+
+
+
+
+
+# 🧾 GitHub Issue Validation Script (Org-Level)
+
+This script validates the consistency of GitHub issues between a **source** and **destination** organization after a migration. It checks for missing issues and mismatched comments across all repositories present in both orgs.
+
+---
+
+## ✅ Features
+
+- 🔍 Compares issue numbers repo-by-repo
+- 🔁 Detects issues **missing on either side**
+- 🗨️ Attempts to validate issue **comments** (threaded follow-up only)
+- 🧾 Generates a detailed CSV report
+- 🛡️ Includes robust error handling and logs
+
+---
+
+## 📁 Expected Environment Variables
+
+| Variable             | Description                                      |
+|----------------------|--------------------------------------------------|
+| `SOURCE_TOKEN`       | Personal Access Token for source org             |
+| `DESTINATION_TOKEN`  | Personal Access Token for destination org        |
+| `SOURCE_ORG`         | Name of the source GitHub organization           |
+| `DESTINATION_ORG`    | Name of the destination GitHub organization      |
+| `SOURCE_BASE_URL`    | *(Optional)* GitHub API base URL (for GHE)       |
+| `OUTPUT_CSV`         | *(Optional)* Output file name (default: `missing_issues_report.csv`) |
+
+Set these using `export VAR=value` in your terminal or CI environment.
