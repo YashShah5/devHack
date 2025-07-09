@@ -1,263 +1,29 @@
-import os
-import csv
-import logging
-import traceback
-from typing import Dict, Set, Optional, List
-from github import (
-    Github,
-    Auth,
-    Repository,
-    BadCredentialsException,
-    RateLimitExceededException,
-    UnknownObjectException
-)
-from requests.exceptions import RequestException
+graph TD
+    A[Start] --> B[MongoDB Filter: repo.size > 400MB]
+    B --> C[Export Matching Repos to CSV]
+    C --> D[Loop Over CSV Repos]
+    D --> E[Clone Repository with --mirror and token auth]
+    E --> F[List All Branches]
+    F --> G[Log Total Branch Count]
+    G --> G2[Run git-sizer on Cloned Repo]
+    G2 --> H[Iterate Through All Commits]
+    H --> I[Iterate All Files in Each Commit]
+    I --> J[Check File Size]
+    J --> K{File > 400MB?}
+    
+    K -- Yes --> L[Record File Path, Size in MB, Blob SHA, Commit ID]
+    L --> M[Construct GitHub Blob URL]
+    M --> N[Log Result in CSV]
+    
+    K -- No --> O[Continue Scanning]
+    
+    N --> P[Log Large File Found = Yes]
+    O --> P
+    P --> Q[Log Total Files Scanned]
+    
+    Q --> R[Next Repo]
+    R --> D
 
-# --- Logging Config ---
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
-
-# --- Env Config ---
-SOURCE_BASE_URL: Optional[str] = os.getenv("SOURCE_BASE_URL")
-SOURCE_TOKEN: Optional[str] = os.getenv("SOURCE_TOKEN")
-SOURCE_ORG: Optional[str] = os.getenv("SOURCE_ORG")
-
-DESTINATION_TOKEN: Optional[str] = os.getenv("DESTINATION_TOKEN")
-DESTINATION_ORG: Optional[str] = os.getenv("DESTINATION_ORG")
-
-OUTPUT_CSV: str = os.getenv("OUTPUT_CSV", "missing_issues_report.csv")
-
-
-# --- GitHub Auth ---
-def authenticate_github(token: str, base_url: Optional[str] = None) -> Github:
-    if base_url:
-        return Github(base_url=base_url, auth=Auth.Token(token))
-    return Github(auth=Auth.Token(token))
-
-
-def validate_auth(token: str, org_name: str, base_url: Optional[str] = None, label: str = "") -> Github:
-    if not token or len(token.strip()) < 10:
-        raise ValueError(f"GitHub token is missing or malformed for {label}")
-
-    logging.info(f"Authenticating with {label} GitHub for org: {org_name}")
-    try:
-        gh: Github = authenticate_github(token.strip(), base_url)
-        gh.get_organization(org_name)
-        logging.info(f"Successfully authenticated with {label} GitHub.")
-        return gh
-    except BadCredentialsException:
-        raise ValueError(f"Invalid GitHub credentials for {label}")
-    except Exception as e:
-        raise ValueError(f"Error authenticating with {label}: {e}")
-
-
-# --- Fetch Issues ---
-def fetch_issue_numbers(repo: Repository.Repository) -> Set[int]:
-    issue_nums: Set[int] = set()
-    try:
-        issues = repo.get_issues(state='all')
-        for issue in issues:
-            if not issue.pull_request:
-                issue_nums.add(issue.number)
-        logging.info(f"{repo.full_name}: {len(issue_nums)} issue(s) found")
-    except Exception as e:
-        logging.warning(f"Failed to fetch issues for {repo.full_name}: {e}")
-    return issue_nums
-
-
-# --- Fetch Comments ---
-def get_issue_comments(repo: Repository.Repository, issue_number: int) -> List[Dict[str, str]]:
-    try:
-        issue = repo.get_issue(number=issue_number)
-        comments = issue.get_comments()
-        return [{"user": c.user.login if c.user else "ghost", "body": c.body.strip() if c.body else ""} for c in comments]
-    except Exception as e:
-        logging.warning(f"Error fetching comments for issue #{issue_number} in {repo.full_name}: {e}")
-        return []
-
-
-# --- Comment Formatters ---
-def format_comment_list(comments: List[Dict[str, str]], side: str) -> str:
-    lines = []
-    for c in comments:
-        preview = c['body'].replace('\n', ' ').strip()[:100]
-        lines.append(f"[{side} ONLY] {c['user']} → '{preview}'")
-    return "\n".join(lines)
-
-
-def format_comment_diff(pairs: List[Dict[str, Dict[str, str]]]) -> str:
-    lines = []
-    for pair in pairs:
-        src = pair["src"]
-        dst = pair["dst"]
-        lines.append(f"SRC: {src['user']} → '{src['body'][:100]}'")
-        lines.append(f"DST: {dst['user']} → '{dst['body'][:100]}'")
-        lines.append("---")
-    return "\n".join(lines)
-
-
-def get_missing_comments(source: List[Dict[str, str]], dest: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    def normalize(c):
-        return {
-            "user": c["user"].strip().lower(),
-            "body": (c["body"] or "").strip().lower()
-        }
-    return [c for c in source if normalize(c) not in list(map(normalize, dest))]
-
-
-# --- Compare ---
-def compare_issues(src: Set[int], dst: Set[int]) -> Dict[str, List[int]]:
-    return {
-        "missing_in_dest": sorted(list(src - dst)),
-        "missing_in_source": sorted(list(dst - src))
-    }
-
-
-def compare_comments(src_comments: List[Dict[str, str]], dst_comments: List[Dict[str, str]]) -> Dict[str, any]:
-    if len(src_comments) != len(dst_comments):
-        missing_in_dst = get_missing_comments(src_comments, dst_comments)
-        missing_in_src = get_missing_comments(dst_comments, src_comments)
-
-        return {
-            "status": "comment_count_mismatch",
-            "diff": f"SRC: {len(src_comments)} vs DST: {len(dst_comments)} comments",
-            "missing_comments": (
-                format_comment_list(missing_in_dst, "SRC") + "\n" +
-                format_comment_list(missing_in_src, "DST")
-            )
-        }
-
-    mismatched = []
-    for i, (s, d) in enumerate(zip(src_comments, dst_comments)):
-        if s["user"] != d["user"] or s["body"] != d["body"]:
-            mismatched.append({"src": s, "dst": d})
-
-    if mismatched:
-        return {
-            "status": "comment_body_mismatch",
-            "diff": f"{len(src_comments)} comments compared, {len(mismatched)} mismatch(es)",
-            "missing_comments": format_comment_diff(mismatched)
-        }
-
-    return {"status": "match"}
-
-
-# --- CSV Writer ---
-def write_csv(missing_data: List[Dict[str, str]]) -> None:
-    logging.info(f"Writing report to: {OUTPUT_CSV}")
-    with open(OUTPUT_CSV, "w", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file, quoting=csv.QUOTE_ALL)
-        writer.writerow(["Repository", "Direction", "Issue Number", "Notes", "Missing Comments"])
-        for row in missing_data:
-            writer.writerow([
-                row["repo"],
-                row["direction"],
-                row["issue"],
-                row.get("notes", ""),
-                row.get("missing_comments", "")
-            ])
-    logging.info("CSV write complete.")
-
-
-# --- Main Logic ---
-def verify_org_issues() -> None:
-    try:
-        logging.info("Starting issue + comment validation...")
-
-        source_gh = validate_auth(SOURCE_TOKEN, SOURCE_ORG, SOURCE_BASE_URL, label="source")
-        dest_gh = validate_auth(DESTINATION_TOKEN, DESTINATION_ORG, label="destination")
-
-        source_org = source_gh.get_organization(SOURCE_ORG)
-        dest_org = dest_gh.get_organization(DESTINATION_ORG)
-
-        source_repos = {repo.name: repo for repo in source_org.get_repos()}
-        dest_repos = {repo.name: repo for repo in dest_org.get_repos()}
-
-        report_data: List[Dict[str, str]] = []
-
-        for repo_name, src_repo in source_repos.items():
-            if repo_name not in dest_repos:
-                logging.warning(f"Repo '{repo_name}' not found in destination. Skipping.")
-                continue
-
-            dst_repo = dest_repos[repo_name]
-
-            src_issues = fetch_issue_numbers(src_repo)
-            dst_issues = fetch_issue_numbers(dst_repo)
-
-            diffs = compare_issues(src_issues, dst_issues)
-
-            for issue_num in diffs["missing_in_dest"]:
-                report_data.append({"repo": repo_name, "direction": "missing_in_destination", "issue": issue_num})
-
-            for issue_num in diffs["missing_in_source"]:
-                report_data.append({"repo": repo_name, "direction": "missing_in_source", "issue": issue_num})
-
-            shared_issues = src_issues & dst_issues
-            for issue_num in shared_issues:
-                src_comments = get_issue_comments(src_repo, issue_num)
-                dst_comments = get_issue_comments(dst_repo, issue_num)
-
-                result = compare_comments(src_comments, dst_comments)
-                if result["status"] != "match":
-                    print(f"DEBUG: Issue #{issue_num} result → {result['status']}")
-                    print(result["missing_comments"])
-                    report_data.append({
-                        "repo": repo_name,
-                        "direction": result["status"],
-                        "issue": issue_num,
-                        "notes": result["diff"],
-                        "missing_comments": result["missing_comments"]
-                    })
-
-        write_csv(report_data)
-
-    except (RateLimitExceededException, RequestException) as e:
-        logging.error(f"GitHub API error: {e}")
-    except ValueError as e:
-        logging.error(e)
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}")
-        traceback.print_exc()
-
-
-if __name__ == "__main__":
-    verify_org_issues()
-
-
-
-
-
-
-
-
-# 🧾 GitHub Issue Validation Script (Org-Level)
-
-This script validates the consistency of GitHub issues between a **source** and **destination** organization after a migration. It checks for missing issues and mismatched comments across all repositories present in both orgs.
-
----
-
-## ✅ Features
-
-- 🔍 Compares issue numbers repo-by-repo
-- 🔁 Detects issues **missing on either side**
-- 🗨️ Attempts to validate issue **comments** (threaded follow-up only)
-- 🧾 Generates a detailed CSV report
-- 🛡️ Includes robust error handling and logs
-
----
-
-## 📁 Expected Environment Variables
-
-| Variable             | Description                                      |
-|----------------------|--------------------------------------------------|
-| `SOURCE_TOKEN`       | Personal Access Token for source org             |
-| `DESTINATION_TOKEN`  | Personal Access Token for destination org        |
-| `SOURCE_ORG`         | Name of the source GitHub organization           |
-| `DESTINATION_ORG`    | Name of the destination GitHub organization      |
-| `SOURCE_BASE_URL`    | *(Optional)* GitHub API base URL (for GHE)       |
-| `OUTPUT_CSV`         | *(Optional)* Output file name (default: `missing_issues_report.csv`) |
-
-Set these using `export VAR=value` in your terminal or CI environment.
+    D -->|All Done| S[Write Final CSV Report]
+    S --> T[Optional: Store in Dashboard or DB]
+    T --> U[End]
