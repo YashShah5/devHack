@@ -83,7 +83,7 @@ def format_comment_list(comments: List[Dict[str, str]], side: str) -> str:
     lines = []
     for c in comments:
         preview = c['body'].replace('\n', ' ').strip()[:100]
-        lines.append(f"{side}: {c['user']} → '{preview}'")
+        lines.append(f"[{side} ONLY] {c['user']} → '{preview}'")
     return "\n".join(lines)
 
 
@@ -98,6 +98,10 @@ def format_comment_diff(pairs: List[Dict[str, Dict[str, str]]]) -> str:
     return "\n".join(lines)
 
 
+def get_missing_comments(source: List[Dict[str, str]], dest: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    return [c for c in source if c not in dest]
+
+
 # --- Compare ---
 def compare_issues(src: Set[int], dst: Set[int]) -> Dict[str, List[int]]:
     return {
@@ -108,10 +112,16 @@ def compare_issues(src: Set[int], dst: Set[int]) -> Dict[str, List[int]]:
 
 def compare_comments(src_comments: List[Dict[str, str]], dst_comments: List[Dict[str, str]]) -> Dict[str, any]:
     if len(src_comments) != len(dst_comments):
+        missing_in_dst = get_missing_comments(src_comments, dst_comments)
+        missing_in_src = get_missing_comments(dst_comments, src_comments)
+
         return {
             "status": "comment_count_mismatch",
             "diff": f"SRC: {len(src_comments)} vs DST: {len(dst_comments)} comments",
-            "missing_comments": format_comment_list(src_comments, "SRC") + "\n" + format_comment_list(dst_comments, "DST")
+            "missing_comments": (
+                format_comment_list(missing_in_dst, "SRC") + "\n" +
+                format_comment_list(missing_in_src, "DST")
+            )
         }
 
     mismatched = []
