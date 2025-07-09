@@ -30,11 +30,11 @@ SIZE_THRESHOLD = 419430400  # 400MB
 # Ensure clone directory exists
 os.makedirs(CLONE_DIR, exist_ok=True)
 
-# Prepare output CSV with headers
+# Prepare output CSV with headers (new column order)
 output_rows = [[
-    "Repo URL", "Clone Status", "Scan Status", "File Path", "File Size (MB)",
-    "Blob SHA", "Commit ID", "GitHub URL", "Branches Scanned", "Files Scanned",
-    "Error", "Large File Detected"
+    "Repo URL", "Clone Status", "Scan Status", "Large File Detected",
+    "File Path", "File Size (MB)", "Blob SHA", "Commit ID", "GitHub URL",
+    "Branches Scanned", "Files Scanned", "Error"
 ]]
 
 # Load repo URLs
@@ -48,7 +48,6 @@ for url in urls:
     owner = url.split("/")[-2]
     clone_path = os.path.join(CLONE_DIR, repo_name)
 
-    # Clean up previous clone if it exists
     if os.path.exists(clone_path):
         shutil.rmtree(clone_path)
 
@@ -97,9 +96,8 @@ for url in urls:
                         size_mb = round(size / (1024 * 1024), 2)
                         github_url = f"https://github.com/{owner}/{repo_name}/blob/{commit}/{file_path}"
                         output_rows.append([
-                            url, clone_status, "Completed", file_path, size_mb,
-                            blob_hash, commit, github_url, total_branches, total_files,
-                            "", "Yes"
+                            url, clone_status, "Completed", "Yes", file_path, size_mb,
+                            blob_hash, commit, github_url, total_branches, total_files, ""
                         ])
                         log_and_print(f"LARGE FILE FOUND: {file_path} ({size_mb} MB) in {url}")
                 except Exception:
@@ -107,19 +105,16 @@ for url in urls:
 
         scan_status = "Completed"
 
-        # If no large files were found, still log the repo
         if not large_file_found:
             output_rows.append([
-                url, clone_status, scan_status, "", "", "", "", "", total_branches,
-                total_files, "", "No"
+                url, clone_status, scan_status, "No", "", "", "", "", "", total_branches, total_files, ""
             ])
 
     except subprocess.CalledProcessError as e:
         error_message = e.stderr.decode()
         log_and_print(f"CLONE OR SCAN FAILED: {url} — {error_message}")
         output_rows.append([
-            url, clone_status, scan_status, "", "", "", "", "", total_branches,
-            total_files, error_message, "N/A"
+            url, clone_status, scan_status, "N/A", "", "", "", "", "", total_branches, total_files, error_message
         ])
         continue
 
