@@ -99,7 +99,12 @@ def format_comment_diff(pairs: List[Dict[str, Dict[str, str]]]) -> str:
 
 
 def get_missing_comments(source: List[Dict[str, str]], dest: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    return [c for c in source if c not in dest]
+    def normalize(c):
+        return {
+            "user": c["user"].strip().lower(),
+            "body": (c["body"] or "").strip().lower()
+        }
+    return [c for c in source if normalize(c) not in list(map(normalize, dest))]
 
 
 # --- Compare ---
@@ -143,7 +148,7 @@ def compare_comments(src_comments: List[Dict[str, str]], dst_comments: List[Dict
 def write_csv(missing_data: List[Dict[str, str]]) -> None:
     logging.info(f"Writing report to: {OUTPUT_CSV}")
     with open(OUTPUT_CSV, "w", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
+        writer = csv.writer(file, quoting=csv.QUOTE_ALL)
         writer.writerow(["Repository", "Direction", "Issue Number", "Notes", "Missing Comments"])
         for row in missing_data:
             writer.writerow([
@@ -197,6 +202,8 @@ def verify_org_issues() -> None:
 
                 result = compare_comments(src_comments, dst_comments)
                 if result["status"] != "match":
+                    print(f"DEBUG: Issue #{issue_num} result → {result['status']}")
+                    print(result["missing_comments"])
                     report_data.append({
                         "repo": repo_name,
                         "direction": result["status"],
