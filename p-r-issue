@@ -1,0 +1,54 @@
+### 🧾 Summary
+
+Implements a post-flight validation script (`issue-validation-org-level.py`) that verifies GitHub issue parity across all repositories between a source and destination organization. This helps ensure complete issue migration following org-to-org transitions.
+
+---
+
+### ✅ Key Changes
+
+| Type         | Description                                                       |
+|--------------|-------------------------------------------------------------------|
+| ♻️ Script     | New script to compare issues in all matching repos across orgs    |
+| 🛡️ Error Handling | Handles auth, missing repos, malformed tokens, and API errors     |
+| 📊 Output     | Generates a CSV report logging any issue number mismatches        |
+| 🔁 Comparison | Checks for issues missing on **either** side (source & destination) |
+
+---
+
+### 🧪 Output Sample
+
+| Repository      | Direction             | Missing Issue Number |
+|-----------------|-----------------------|-----------------------|
+| `repo-a`        | `missing_in_destination` | 42                    |
+| `repo-a`        | `missing_in_source`      | 19                    |
+| `repo-b`        | `missing_in_destination` | 8                     |
+
+> Output written to: `missing_issues_report.csv`
+
+---
+
+### 🎯 Acceptance Criteria
+
+- [x] Authenticates against source and destination GitHub orgs
+- [x] Iterates through all repos in source org
+- [x] Compares issue numbers for each matching repo
+- [x] Handles exclusions (e.g., pull requests)
+- [x] Writes a clean CSV report of mismatches
+- [x] Compatible with existing migration validation scripts (tag, branch, etc.)
+
+---
+
+### 📌 Impact
+
+- Improves visibility into **post-migration consistency**
+- Simplifies QA for large-scale GitHub org migrations
+- Reduces risk of **missed issues** or **partial syncs**
+- Aligns with tag/branch validation scripts for unified reporting
+
+---
+
+### 🔒 Notes
+
+- `load_dotenv()` **not used** — relies on `os.getenv()` and externally set env vars
+- Output logs written to `issue_validation.log`
+- Does not inspect issue metadata (title/body/labels) — future enhancement possible
