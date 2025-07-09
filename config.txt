@@ -9,8 +9,7 @@ from github import (
     Repository,
     BadCredentialsException,
     RateLimitExceededException,
-    UnknownObjectException,
-    IssueComment
+    UnknownObjectException
 )
 from requests.exceptions import RequestException
 
@@ -79,6 +78,26 @@ def get_issue_comments(repo: Repository.Repository, issue_number: int) -> List[D
         return []
 
 
+# --- Comment Formatters ---
+def format_comment_list(comments: List[Dict[str, str]], side: str) -> str:
+    lines = []
+    for c in comments:
+        preview = c['body'].replace('\n', ' ').strip()[:100]
+        lines.append(f"{side}: {c['user']} → '{preview}'")
+    return "\n".join(lines)
+
+
+def format_comment_diff(pairs: List[Dict[str, Dict[str, str]]]) -> str:
+    lines = []
+    for pair in pairs:
+        src = pair["src"]
+        dst = pair["dst"]
+        lines.append(f"SRC: {src['user']} → '{src['body'][:100]}'")
+        lines.append(f"DST: {dst['user']} → '{dst['body'][:100]}'")
+        lines.append("---")
+    return "\n".join(lines)
+
+
 # --- Compare ---
 def compare_issues(src: Set[int], dst: Set[int]) -> Dict[str, List[int]]:
     return {
@@ -87,26 +106,43 @@ def compare_issues(src: Set[int], dst: Set[int]) -> Dict[str, List[int]]:
     }
 
 
-def compare_comments(src_comments: List[Dict[str, str]], dst_comments: List[Dict[str, str]]) -> str:
+def compare_comments(src_comments: List[Dict[str, str]], dst_comments: List[Dict[str, str]]) -> Dict[str, any]:
     if len(src_comments) != len(dst_comments):
-        return "comment_count_mismatch"
+        return {
+            "status": "comment_count_mismatch",
+            "diff": f"SRC: {len(src_comments)} vs DST: {len(dst_comments)} comments",
+            "missing_comments": format_comment_list(src_comments, "SRC") + "\n" + format_comment_list(dst_comments, "DST")
+        }
 
-    # Normalize and compare each comment
-    for s, d in zip(src_comments, dst_comments):
+    mismatched = []
+    for i, (s, d) in enumerate(zip(src_comments, dst_comments)):
         if s["user"] != d["user"] or s["body"] != d["body"]:
-            return "comment_body_mismatch"
+            mismatched.append({"src": s, "dst": d})
 
-    return "match"
+    if mismatched:
+        return {
+            "status": "comment_body_mismatch",
+            "diff": f"{len(src_comments)} comments compared, {len(mismatched)} mismatch(es)",
+            "missing_comments": format_comment_diff(mismatched)
+        }
+
+    return {"status": "match"}
 
 
 # --- CSV Writer ---
 def write_csv(missing_data: List[Dict[str, str]]) -> None:
     logging.info(f"Writing report to: {OUTPUT_CSV}")
-    with open(OUTPUT_CSV, "w", newline="") as file:
+    with open(OUTPUT_CSV, "w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
-        writer.writerow(["Repository", "Direction", "Issue Number", "Notes"])
+        writer.writerow(["Repository", "Direction", "Issue Number", "Notes", "Missing Comments"])
         for row in missing_data:
-            writer.writerow([row["repo"], row["direction"], row["issue"], row.get("notes", "")])
+            writer.writerow([
+                row["repo"],
+                row["direction"],
+                row["issue"],
+                row.get("notes", ""),
+                row.get("missing_comments", "")
+            ])
     logging.info("CSV write complete.")
 
 
@@ -115,7 +151,6 @@ def verify_org_issues() -> None:
     try:
         logging.info("Starting issue + comment validation...")
 
-        # Auth
         source_gh = validate_auth(SOURCE_TOKEN, SOURCE_ORG, SOURCE_BASE_URL, label="source")
         dest_gh = validate_auth(DESTINATION_TOKEN, DESTINATION_ORG, label="destination")
 
@@ -140,33 +175,25 @@ def verify_org_issues() -> None:
             diffs = compare_issues(src_issues, dst_issues)
 
             for issue_num in diffs["missing_in_dest"]:
-                report_data.append({
-                    "repo": repo_name,
-                    "direction": "missing_in_destination",
-                    "issue": issue_num
-                })
+                report_data.append({"repo": repo_name, "direction": "missing_in_destination", "issue": issue_num})
 
             for issue_num in diffs["missing_in_source"]:
-                report_data.append({
-                    "repo": repo_name,
-                    "direction": "missing_in_source",
-                    "issue": issue_num
-                })
+                report_data.append({"repo": repo_name, "direction": "missing_in_source", "issue": issue_num})
 
-            # ✅ Compare comments for shared issues
-            shared = src_issues & dst_issues
-            for issue_num in shared:
+            shared_issues = src_issues & dst_issues
+            for issue_num in shared_issues:
                 src_comments = get_issue_comments(src_repo, issue_num)
                 dst_comments = get_issue_comments(dst_repo, issue_num)
+
                 result = compare_comments(src_comments, dst_comments)
-                if result != "match":
+                if result["status"] != "match":
                     report_data.append({
                         "repo": repo_name,
-                        "direction": result,
+                        "direction": result["status"],
                         "issue": issue_num,
-                        "notes": f"{len(src_comments)} vs {len(dst_comments)} comments"
+                        "notes": result["diff"],
+                        "missing_comments": result["missing_comments"]
                     })
-                    logging.warning(f"Comment mismatch on {repo_name}#{issue_num}: {result}")
 
         write_csv(report_data)
 
