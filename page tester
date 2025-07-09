@@ -2,13 +2,13 @@ import os
 import csv
 import subprocess
 import logging
-from dotenv import load_dotenv
 import shutil
+from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
-# Logging setup
+# Setup logging
 LOG_FILE = "large_file_scan.log"
 logging.basicConfig(
     filename=LOG_FILE,
@@ -16,109 +16,116 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-def log_and_print(msg):
-    print(msg)
-    logging.info(msg)
+def log_and_print(message):
+    print(message)
+    logging.info(message)
 
 # Constants
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 INPUT_CSV = "urlTestGreater.csv"
-OUTPUT_CSV = "large_files_report.csv"
+OUTPUT_CSV = "enhanced_large_files_report.csv"
 CLONE_DIR = "cloned_repos"
-SIZE_THRESHOLD = 419_430_400  # 400MB in bytes
+SIZE_THRESHOLD = 419430400  # 400MB
 
+# Ensure clone directory exists
 os.makedirs(CLONE_DIR, exist_ok=True)
 
-# Read URLs
+# Prepare output CSV with headers
+output_rows = [[
+    "Repo URL", "Clone Status", "Scan Status", "File Path", "File Size (MB)",
+    "Blob SHA", "Commit ID", "GitHub URL", "Branches Scanned", "Files Scanned",
+    "Error", "Large File Detected"
+]]
+
+# Load repo URLs
 with open(INPUT_CSV, newline='') as infile:
-    urls = [row[0].strip() for row in csv.reader(infile) if row]
+    reader = csv.reader(infile)
+    urls = [row[0].strip() for row in reader if row]
 
-# CSV output headers
-output_rows = [["Repo URL", "Clone Status", "Scan Status", "Large File Found", "File Count", "Branch Count", "Large Files (SHA, Path, Size in MB, Commit, Branch)", "Error"]]
-
+# Process each repo
 for url in urls:
     repo_name = url.split("/")[-1].replace(".git", "")
+    owner = url.split("/")[-2]
     clone_path = os.path.join(CLONE_DIR, repo_name)
+
+    # Clean up previous clone if it exists
     if os.path.exists(clone_path):
         shutil.rmtree(clone_path)
 
     authed_url = url.replace("https://", f"https://{GITHUB_TOKEN}@")
+
     clone_status = "Failed"
     scan_status = "Not Started"
     error_message = ""
-    large_files = []
-    file_count = 0
-    branch_count = 0
+    seen_blobs = set()
+    total_files = 0
+    total_branches = 0
+    large_file_found = False
 
     try:
         subprocess.run(["git", "clone", "--mirror", authed_url, clone_path],
                        check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        log_and_print(f"CLONE SUCCESS: {url}")
         clone_status = "Success"
-        log_and_print(f"[CLONED] {url}")
 
-        try:
-            # Get all branches
-            branches = subprocess.check_output(["git", "for-each-ref", "--format=%(refname:short)", "refs/heads"], cwd=clone_path).decode().splitlines()
-            branch_count = len(branches)
-            seen_blobs = set()
+        branches = subprocess.check_output(
+            ["git", "for-each-ref", "--format=%(refname:short)", "refs/heads/"],
+            cwd=clone_path
+        ).decode().splitlines()
+        total_branches = len(branches)
 
-            for branch in branches:
-                log_and_print(f"[BRANCH] Scanning: {branch}")
-                commits = subprocess.check_output(["git", "rev-list", branch], cwd=clone_path).decode().splitlines()
-                for commit in commits:
-                    try:
-                        tree_output = subprocess.check_output(["git", "ls-tree", "-r", commit], cwd=clone_path).decode().splitlines()
-                    except subprocess.CalledProcessError:
-                        continue
+        commits = subprocess.check_output(["git", "rev-list", "--all"], cwd=clone_path).decode().splitlines()
 
-                    for line in tree_output:
-                        parts = line.split()
-                        if len(parts) < 4:
-                            continue
-                        blob_hash = parts[2]
-                        file_path = parts[3]
-                        file_count += 1
+        for commit in commits:
+            tree_output = subprocess.check_output(["git", "ls-tree", "-r", commit], cwd=clone_path).decode().splitlines()
+            for line in tree_output:
+                parts = line.split()
+                if len(parts) < 4:
+                    continue
+                blob_hash = parts[2]
+                file_path = parts[3]
 
-                        if blob_hash in seen_blobs:
-                            continue
-                        seen_blobs.add(blob_hash)
+                if blob_hash in seen_blobs:
+                    continue
+                seen_blobs.add(blob_hash)
+                total_files += 1
 
-                        try:
-                            size = int(subprocess.check_output(["git", "cat-file", "-s", blob_hash], cwd=clone_path).decode().strip())
-                            if size > SIZE_THRESHOLD:
-                                size_mb = round(size / (1024 * 1024), 2)
-                                large_files.append(f"{blob_hash}, {file_path}, {size_mb} MB, {commit}, {branch}")
-                        except Exception:
-                            continue
+                try:
+                    size = int(subprocess.check_output(["git", "cat-file", "-s", blob_hash], cwd=clone_path).decode().strip())
+                    if size > SIZE_THRESHOLD:
+                        large_file_found = True
+                        size_mb = round(size / (1024 * 1024), 2)
+                        github_url = f"https://github.com/{owner}/{repo_name}/blob/{commit}/{file_path}"
+                        output_rows.append([
+                            url, clone_status, "Completed", file_path, size_mb,
+                            blob_hash, commit, github_url, total_branches, total_files,
+                            "", "Yes"
+                        ])
+                        log_and_print(f"LARGE FILE FOUND: {file_path} ({size_mb} MB) in {url}")
+                except Exception:
+                    continue
 
-            scan_status = "Completed"
-            large_file_found = "Yes" if large_files else "No"
-            if not large_files:
-                large_files.append("None")
+        scan_status = "Completed"
 
-            log_and_print(f"[SCAN DONE] {url} — {len(large_files)} large files found.")
-
-        except subprocess.CalledProcessError as e:
-            scan_status = "Failed"
-            error_message = e.stderr.decode()
-            log_and_print(f"[SCAN FAIL] {url} — {error_message}")
+        # If no large files were found, still log the repo
+        if not large_file_found:
+            output_rows.append([
+                url, clone_status, scan_status, "", "", "", "", "", total_branches,
+                total_files, "", "No"
+            ])
 
     except subprocess.CalledProcessError as e:
         error_message = e.stderr.decode()
-        log_and_print(f"[CLONE FAIL] {url} — {error_message}")
+        log_and_print(f"CLONE OR SCAN FAILED: {url} — {error_message}")
+        output_rows.append([
+            url, clone_status, scan_status, "", "", "", "", "", total_branches,
+            total_files, error_message, "N/A"
+        ])
+        continue
 
-    output_rows.append([
-        url,
-        clone_status,
-        scan_status,
-        "Yes" if any("None" not in large_files) else "No",
-        file_count,
-        branch_count,
-        "; ".join(large_files),
-        error_message
-    ])
-
-# Write output
-with open(OUTPUT_CSV, "w", newline='') as f:
-    writer = csv.writer(f)
+# Write output CSV
+with open(OUTPUT_CSV, "w", newline='') as outfile:
+    writer = csv.writer(outfile)
     writer.writerows(output_rows)
+
+log_and_print("Scan complete. Results written to enhanced_large_files_report.csv.")
