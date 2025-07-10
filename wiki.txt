@@ -1,0 +1,46 @@
+h1. 🧪 Wiki Migration Testing – Manual QA Log
+
+h2. 📘 Purpose
+To manually test and record what types of content (attachments, emojis, formatting, links, etc.) successfully migrate from on-prem GitHub wikis to GitHub SaaS.
+
+h2. 🧭 1. How to Use This Page
+For each tested repo/page, log:
+* What was present in the origin wiki
+* What made it to the destination
+* Any specific failures (e.g. broken image, garbled emoji, bad link)
+
+Use ✅ for success, ❌ for failure, ⚠️ for partial/missing, and 📝 in the “Notes” for details.
+
+h2. 📊 2. Migration Content QA Table
+
+|| Test ID || Repo Name || Wiki Page || Attachments || Emojis || Links || Code || Special Chars || Overall Result || Notes ||
+| #001 | infra-docs | Home | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ Success | Fully migrated |
+| #002 | api-client | Overview | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ Fail | Attachments & accents broken |
+| #003 | design-docs | Setup | ✅ | ✅ | ⚠️ | ✅ | ✅ | ⚠️ Partial | Internal link to Config.md broken |
+| #004 | ml-engine | Results | ⚠️ | ✅ | ✅ | ✅ | ✅ | ⚠️ Partial | One PNG attachment missing |
+
+h2. ✅ 3. Test Checklist (Per Page)
+
+* [x] Wiki exists in origin repo
+* [x] Wiki created in destination
+* [ ] All .md files transferred
+* [ ] Emojis render properly
+* [ ] Attachments render/download
+* [ ] Internal markdown links work
+* [ ] External links work
+* [ ] Code blocks render cleanly
+* [ ] Special characters display correctly (e.g. ñ, π, ∆)
+* [ ] Notes/comments added to log table
+
+h2. 💬 4. Comments / Observations
+
+{quote}
+*Yash:* Looks like .pdf files break only in private repos.  
+*John:* Internal links using relative paths (./Page.md) often 404.
+{quote}
+
+h2. 📌 5. Action Items
+
+* [ ] Create reusable Confluence template from this page  
+* [ ] Document attachment limits in SaaS  
+* [ ] Escalate emoji rendering bug to tooling team
