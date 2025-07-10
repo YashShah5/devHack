@@ -1,0 +1,29 @@
+flowchart LR
+    A[Origin Org - On-Prem] -->|Migration Tool| B[Destination Org - SaaS]
+
+    subgraph Origin_Org_On_Prem
+        A1[📁 Wikis]
+    end
+
+    subgraph Destination_Org_SaaS
+        B1[📁 Wikis]
+    end
+
+    A1 --> B1
+
+    %% Content Types
+    M1([📎 Attachments])
+    M2([😀 Emojis])
+    M3([🔗 Links])
+    M4([💻 Code Blocks])
+    M5([🧬 Special Characters])
+
+    M1 -.-> B1
+    M2 -.-> B1
+    M3 -.-> B1
+    M4 -.-> B1
+    M5 -.-> B1
+
+    %% Warnings
+    W1{{⚠️ Check for:<br/>• Missing Files<br/>• Broken Links<br/>• Emoji Issues<br/>• Encoding Errors}}
+    W1 --- B1
