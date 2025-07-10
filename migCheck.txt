@@ -1,0 +1,69 @@
+# 🧪 Migration Test: Emojis, Special Characters & Code Blocks
+
+Welcome to the **Migration Testing Wiki Page**. This file contains various elements that commonly cause issues during migrations, including emoji rendering, special Unicode characters, and code formatting.
+
+---
+
+## 😀 Emojis
+
+Check that all these render properly:
+
+- ✅ Success  
+- ❌ Failure  
+- 🚀 Launch  
+- 🔥 Fire  
+- 🐍 Python  
+- 💻 Developer  
+- 📎 Attachment  
+- 📘 Documentation  
+
+---
+
+## 🧬 Special Characters
+
+Test common characters from international text, math, and Greek letters:
+
+- Accented characters: `é`, `ñ`, `ü`, `ç`, `ø`, `å`  
+- Smart punctuation: `“quotes”`, `— em dash —`, `– en dash –`  
+- Math symbols: `π`, `∑`, `∞`, `∆`, `√`, `≈`, `≠`  
+- Currencies: `$`, `€`, `¥`, `₹`  
+- Others: `©`, `™`, `§`, `¶`, `•`
+
+---
+
+## 💻 Code Blocks
+
+### Bash
+
+```bash
+#!/bin/bash
+echo "Migration test: bash code block ✅"
+```
+
+### Python
+
+```python
+def hello():
+    print("👋 Hello from the Python block!")
+```
+
+### JavaScript
+
+```javascript
+const emojis = ['🔥', '✅', '💻'];
+emojis.forEach(e => console.log(`Testing ${e}`));
+```
+
+### Inline Code
+
+You can also use inline code like `print("Hello World")` to test simple formatting.
+
+---
+
+## 📌 Final Notes
+
+If any of the above fails to render in the migrated version:
+- Double check encoding (UTF-8 recommended)
+- Ensure emoji fonts are supported in your environment
+- Look out for lost formatting in fenced code blocks
+
